@@ -1,5 +1,14 @@
 import fetch from 'node-fetch';
 
+const logWrapper = (caller, level, ...args) => {
+  const date = `[${new Date().toISOString()}] ${level.toLocaleUpperCase()}:`;
+  caller(date, ...args);
+};
+['log', 'warn', 'error'].forEach((method) => {
+  const original = console[method];
+  console[method] = (...args) => logWrapper(original, method, ...args);
+});
+
 let serverUrl;
 const PURGE_RETRY = 10;
 const BATCH_SIZE = 50;
@@ -131,6 +140,19 @@ const backupDocs = async (docs, database) => {
   });
 };
 
+const queryViews = async (database) => {
+  if (database !== MEDIC_DB_NAME) {
+    return;
+  }
+
+  console.log('calling views');
+
+  let url = getUrl(`/${database}/_design/medic/_view/contacts_by_depth`, { limit: 1 });
+  await request({ url });
+  url = getUrl(`/${database}/_design/medic-client/_view/contacts_by_last_visited`, { limit: 1 });
+  await request({ url });
+};
+
 export const purgeDocs = async (uuids, database) => {
   while (uuids.length) {
     const batch = uuids.splice(0, BATCH_SIZE);
@@ -155,5 +177,7 @@ export const purgeDocs = async (uuids, database) => {
         }
       }
     } while (retry);
+
+    await queryViews(database);
   }
 };
