@@ -85,7 +85,10 @@ export const request = async ({ url, json = true, ...moreOpts }) => {
 };
 
 export const getDoc = async (uuid, db = MEDIC_DB_NAME, rev) => {
-  const searchParams = { attachments: true, rev };
+  const searchParams = { attachments: true };
+  if (rev) {
+    searchParams.rev = rev;
+  }
   try {
     return await request({ url: getUrl(`/${db}/${uuid}`, searchParams)  });
   } catch (err) {
@@ -157,19 +160,21 @@ export const purgeDocs = async (uuids, database) => {
   while (uuids.length) {
     const batch = uuids.splice(0, BATCH_SIZE);
     console.log('Purging. Uuids left', uuids.length);
-    const { revs, docs } = await getDocRevs(batch, database);
-
-    if (!Object.keys(revs).length) {
-      continue;
-    }
-
-    await backupDocs(docs, database);
-
-    const url = getUrl(`/${database}/_purge`);
     let retry = PURGE_RETRY;
     do {
       try {
+        const { revs, docs } = await getDocRevs(batch, database);
+
+        if (!Object.keys(revs).length) {
+          retry = false;
+          continue;
+        }
+
+        await backupDocs(docs, database);
+
+        const url = getUrl(`/${database}/_purge`);
         await request({ url, method: 'POST', body: revs });
+        await queryViews(database);
         retry = false;
       } catch (err) {
         if (!--retry) {
@@ -177,7 +182,5 @@ export const purgeDocs = async (uuids, database) => {
         }
       }
     } while (retry);
-
-    await queryViews(database);
   }
 };
